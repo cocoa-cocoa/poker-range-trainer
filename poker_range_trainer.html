@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Poker Range Trainer</title>
+<style>
+:root{
+ --bg:#f4f6f8;--ink:#18212f;--border:#cbd5e1;
+ --allin:#ef4444;--raise:#f59e0b;--call:#3b82f6;--fold:#94a3b8;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{touch-action:manipulation}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;touch-action:manipulation}
+header{background:#18212f;color:#fff;padding:13px 12px;position:sticky;top:0;z-index:20}
+.wrap{max-width:1080px;margin:auto} nav{margin-top:9px}
+nav button,.btn{margin:2px;padding:10px 13px;border:0;border-radius:8px;background:#fff;color:#18212f;font-weight:700;font-size:15px;cursor:pointer}
+main{padding:16px}.card{background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 2px 10px #0001}
+.hidden{display:none}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,select{padding:10px;border:1px solid var(--border);border-radius:8px;font-size:16px;max-width:100%}
+.actions button{padding:10px 13px;margin:3px;border:0;border-radius:8px;color:white;font-weight:800;font-size:15px;cursor:pointer}
+.allin{background:var(--allin)}.raise{background:var(--raise)}.call{background:var(--call)}.fold{background:var(--fold)}
+.mixmode{background:#7c3aed!important}.activeMode{outline:3px solid #111827}
+.help{color:#64748b;font-size:14px}
+
+/* 169マス：横＋縦に自由にスクロールでき、斜め移動も可能 */
+.gridwrap{
+ overflow:auto;max-height:72vh;border:1px solid var(--border);border-radius:10px;
+ -webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;
+ background:#fff;
+}
+.grid{display:grid;grid-template-columns:repeat(13,54px);gap:3px;padding:4px;min-width:max-content}
+.cell{
+ height:50px;width:54px;border:1px solid #94a3b8;border-radius:6px;background:#fff;
+ font-weight:800;white-space:pre-line;line-height:1.05;cursor:pointer;
+ position:relative;overflow:hidden;touch-action:manipulation;
+}
+.cell.Fold{background:#e2e8f0}.cell.Raise{background:#fde68a}.cell.Call{background:#bfdbfe}.cell.All-in{background:#fecaca}
+.cell.mix{background:linear-gradient(135deg,var(--c1) 0 50%,var(--c2) 50% 100%)}
+.cell.mix::after{content:"50/50";position:absolute;right:2px;bottom:2px;font-size:9px;color:#111827aa;font-weight:900}
+.cell.pair{border-width:2px;border-color:#475569}
+.cell.suited{border-left-width:3px;border-top-width:3px}
+.cell.offsuit{border-right-width:3px;border-bottom-width:3px}
+.cell.correct{outline:3px solid #22c55e;z-index:2}.cell.wrong{outline:3px solid #ef4444;z-index:2}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:13px;margin:8px 0}.legend span{padding:4px 7px;border-radius:5px}
+.bigHand{text-align:center;font-size:48px;font-weight:900;padding:25px}
+#result{font-size:20px;font-weight:800;margin:12px 0}
+.rangeItem{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:10px;border-bottom:1px solid #e5e7eb}
+@media(max-width:600px){main{padding:9px}.card{padding:12px}.grid{grid-template-columns:repeat(13,52px)}.cell{width:52px;height:48px}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+<b>🃏 Poker Range Trainer</b>
+<nav>
+<button onclick="showPage('home')">ホーム</button>
+<button onclick="newRange()">レンジ作成</button>
+<button onclick="showPage('quiz')">学習モード</button>
+<button onclick="showPage('memory')">169マス暗記</button>
+</nav></div></header>
+
+<main class="wrap">
+<section id="home" class="page card">
+<h2>ポーカー ハンドレンジ学習</h2>
+<p>169ハンドのレンジを作成・保存し、クイズと暗記モードで練習できます。</p>
+<button class="btn" onclick="newRange()">＋ 新しいレンジを作成</button>
+<h3>保存済みレンジ</h3><div id="rangeList"></div>
+</section>
+
+<section id="editor" class="page card hidden">
+<h2>レンジ作成 / 編集</h2>
+<div class="row"><input id="rangeName" placeholder="例：BTN Open"><button class="btn" onclick="saveRange()">💾 保存</button><button class="btn" onclick="showPage('home')">戻る</button></div>
+<p class="help">新規レンジは全169マスが最初からFoldです。通常はアクションで上書き、混合モードは次の1回だけ2色50/50にします。</p>
+<div class="actions">
+<button class="allin" onclick="setAction('All-in')">All-in</button>
+<button class="raise" onclick="setAction('Raise')">Raise</button>
+<button class="call" onclick="setAction('Call')">Call</button>
+<button class="fold" onclick="setAction('Fold')">Fold</button>
+<button id="mixBtn" class="mixmode" onclick="toggleMix()">🎨 2色塗り（次の1回だけ）</button>
+</div>
+<p>選択中：<b id="selectedAction">Raise</b> <span id="mixStatus"></span></p>
+<div class="legend">
+<span style="border:2px solid #475569">■ ポケット：太枠</span>
+<span style="border-left:3px solid #475569;border-top:3px solid #475569">■ スーテッド：左上太枠</span>
+<span style="border-right:3px solid #475569;border-bottom:3px solid #475569">■ オフスート：右下太枠</span>
+</div>
+<div class="gridwrap"><div id="editorGrid" class="grid"></div></div>
+</section>
+
+<section id="quiz" class="page card hidden">
+<h2>学習モード</h2>
+<div class="row"><select id="quizRange" onchange="startQuiz()"></select><button class="btn" onclick="startQuiz()">開始</button></div>
+<div id="quizArea" class="hidden"><div id="quizHand" class="bigHand"></div>
+<div class="actions"><button class="allin" onclick="answerQuiz('All-in')">All-in</button><button class="raise" onclick="answerQuiz('Raise')">Raise</button><button class="call" onclick="answerQuiz('Call')">Call</button><button class="fold" onclick="answerQuiz('Fold')">Fold</button></div>
+<div id="result"></div><button id="nextBtn" class="btn hidden" onclick="nextQuestion()">次の問題</button></div>
+<p id="quizEmpty">保存済みレンジを選択してください。</p>
+</section>
+
+<section id="memory" class="page card hidden">
+<h2>169マス暗記モード</h2>
+<div class="row"><select id="memoryRange" onchange="startMemory()"></select><button class="btn" onclick="startMemory()">開始 / リセット</button><button class="btn" onclick="checkMemory()">答え合わせ</button></div>
+<p class="help">暗記モードも最初から全マスFoldです。アクションを選択して上書きしてください。</p>
+<div class="actions"><button class="allin" onclick="setMemoryAction('All-in')">All-in</button><button class="raise" onclick="setMemoryAction('Raise')">Raise</button><button class="call" onclick="setMemoryAction('Call')">Call</button><button class="fold" onclick="setMemoryAction('Fold')">Fold</button></div>
+<p>選択中：<b id="memorySelected">Raise</b></p>
+<div id="memoryResult"></div><div class="gridwrap"><div id="memoryGrid" class="grid"></div></div>
+</section>
+</main>
+
+<script>
+const R=['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
+const KEY='pokerRangeTrainer_v2';
+let ranges=JSON.parse(localStorage.getItem(KEY)||localStorage.getItem('pokerRangeTrainer_v1')||'[]');
+let current={id:null,name:'',hands:{}}, selected='Raise', mixOnce=false, q=null, memoryAction='Raise', memoryAnswers={};
+
+function handList(){let a=[];for(let i=0;i<13;i++)for(let j=0;j<13;j++)a.push(i===j?R[i]+R[j]:i<j?R[i]+R[j]+'s':R[j]+R[i]+'o');return a}
+function defaultHands(){let h={};handList().forEach(x=>h[x]='Fold');return h}
+function normalizeHands(h){let d=defaultHands();Object.keys(h||{}).forEach(k=>d[k]=h[k]);return d}
+function showPage(id){document.querySelectorAll('.page').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');if(id==='home')renderList();if(id==='quiz'||id==='memory')fillSelects()}
+function newRange(){current={id:null,name:'',hands:defaultHands()};selected='Raise';mixOnce=false;document.getElementById('rangeName').value='';updateEditorStatus();renderEditor();showPage('editor')}
+function setAction(a){selected=a;mixOnce=false;updateEditorStatus()}
+function toggleMix(){mixOnce=!mixOnce;updateEditorStatus()}
+function updateEditorStatus(){document.getElementById('selectedAction').textContent=selected;document.getElementById('mixStatus').textContent=mixOnce?'＋ 次の1マスだけ2色50/50':'';document.getElementById('mixBtn').classList.toggle('activeMode',mixOnce)}
+function typeClass(h){return h.length===2?'pair':h.endsWith('s')?'suited':'offsuit'}
+function colorFor(a){return ({'All-in':'#fecaca','Raise':'#fde68a','Call':'#bfdbfe','Fold':'#e2e8f0'})[a]||'#fff'}
+function applyCellStyle(b,v){
+ b.className='cell '+typeClass(b.dataset.hand);
+ b.style.removeProperty('--c1');b.style.removeProperty('--c2');
+ if(typeof v==='object'&&v.mix){b.classList.add('mix');b.style.setProperty('--c1',colorFor(v.mix[0]));b.style.setProperty('--c2',colorFor(v.mix[1]));b.title=v.mix[0]+' / '+v.mix[1]+'（50/50）'}
+ else {b.classList.add(v||'Fold');b.title=v||'Fold'}
+}
+function renderEditor(){let g=document.getElementById('editorGrid');g.innerHTML='';handList().forEach(h=>{let b=document.createElement('button');b.dataset.hand=h;b.textContent=h;applyCellStyle(b,current.hands[h]);b.onclick=()=>{if(mixOnce){let old=current.hands[h];let first=(typeof old==='object'&&old.mix)?old.mix[0]:old;current.hands[h]={mix:[first,selected]};mixOnce=false;updateEditorStatus()}else current.hands[h]=selected;renderEditor()};g.appendChild(b)})}
+function saveRange(){let n=document.getElementById('rangeName').value.trim();if(!n)return alert('レンジ名を入力してください');current.name=n;current.hands=normalizeHands(current.hands);if(!current.id)current.id=Date.now().toString();let i=ranges.findIndex(x=>x.id===current.id);let copy=JSON.parse(JSON.stringify(current));if(i>=0)ranges[i]=copy;else ranges.push(copy);localStorage.setItem(KEY,JSON.stringify(ranges));alert('保存しました');showPage('home')}
+function renderList(){let d=document.getElementById('rangeList');if(!ranges.length){d.textContent='まだ保存されたレンジはありません。';return}d.innerHTML='';ranges.forEach(r=>{let x=document.createElement('div');x.className='rangeItem';let name=document.createElement('b');name.textContent=r.name;x.append(name,btn('編集',()=>{current=JSON.parse(JSON.stringify(r));current.hands=normalizeHands(current.hands);document.getElementById('rangeName').value=current.name;selected='Raise';mixOnce=false;updateEditorStatus();renderEditor();showPage('editor')}),btn('クイズ',()=>{showPage('quiz');document.getElementById('quizRange').value=r.id;startQuiz()}),btn('名前変更',()=>{let n=prompt('新しい名前',r.name);if(n){r.name=n;localStorage.setItem(KEY,JSON.stringify(ranges));renderList()}}),btn('削除',()=>{if(confirm('削除しますか？')){ranges=ranges.filter(z=>z.id!==r.id);localStorage.setItem(KEY,JSON.stringify(ranges));renderList()}}));d.appendChild(x)})}
+function btn(t,fn){let b=document.createElement('button');b.className='btn';b.textContent=t;b.onclick=fn;return b}
+function fillSelects(){for(const id of ['quizRange','memoryRange']){let s=document.getElementById(id),v=s.value;s.innerHTML='';if(!ranges.length){let o=document.createElement('option');o.textContent='保存済みレンジなし';o.value='';s.appendChild(o)}ranges.forEach(r=>{let o=document.createElement('option');o.value=r.id;o.textContent=r.name;s.appendChild(o)});if(v&&ranges.some(r=>r.id===v))s.value=v}}
+function getRange(id){return ranges.find(r=>r.id===id)}
+function startQuiz(){let r=getRange(document.getElementById('quizRange').value);if(!r){document.getElementById('quizArea').classList.add('hidden');return}r.hands=normalizeHands(r.hands);q={range:r};document.getElementById('quizArea').classList.remove('hidden');document.getElementById('quizEmpty').textContent='';nextQuestion()}
+function nextQuestion(){let h=handList();q.hand=h[Math.floor(Math.random()*h.length)];q.done=false;document.getElementById('quizHand').textContent=q.hand;document.getElementById('result').textContent='';document.getElementById('nextBtn').classList.add('hidden')}
+function answerQuiz(a){if(!q||q.done)return;q.done=true;let v=q.range.hands[q.hand]||'Fold',ok;if(typeof v==='object'&&v.mix){ok=v.mix.includes(a)}else ok=a===v;let msg=typeof v==='object'?'混合：'+v.mix.join(' / ')+'（50/50）':v;document.getElementById('result').textContent=(ok?'✅ 正解！':'❌ 不正解。正しいアクション：'+msg);document.getElementById('nextBtn').classList.remove('hidden')}
+function setMemoryAction(a){memoryAction=a;document.getElementById('memorySelected').textContent=a}
+function startMemory(){memoryAnswers=defaultHands();document.getElementById('memoryResult').textContent='';let g=document.getElementById('memoryGrid');g.innerHTML='';handList().forEach(h=>{let b=document.createElement('button');b.dataset.hand=h;b.textContent=h;applyCellStyle(b,'Fold');b.onclick=()=>{memoryAnswers[h]=memoryAction;applyCellStyle(b,memoryAction)};g.appendChild(b)})}
+function checkMemory(){let r=getRange(document.getElementById('memoryRange').value);if(!r)return;r.hands=normalizeHands(r.hands);let correct=0,cells=[...document.querySelectorAll('#memoryGrid .cell')];handList().forEach((h,i)=>{let exp=r.hands[h]||'Fold',act=memoryAnswers[h]||'Fold',ok=typeof exp==='object'?exp.mix.includes(act):act===exp;cells[i].classList.remove('correct','wrong');cells[i].classList.add(ok?'correct':'wrong');cells[i].title=ok?'正解':('正解：'+(typeof exp==='object'?exp.mix.join(' / '):exp));if(ok)correct++});document.getElementById('memoryResult').textContent='正答率：'+correct+' / 169（'+(correct/169*100).toFixed(1)+'%）'}
+renderList();
+</script></body></html>
